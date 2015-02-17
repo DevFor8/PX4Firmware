@@ -133,7 +133,7 @@ protected:
 	uint32_t                _D2;
 
 	/* altitude conversion calibration */
-	unsigned		_msl_pressure;	/* in kPa */
+	unsigned		_msl_pressure;	/* in Pa */
 
 	orb_advert_t		_baro_topic;
 
@@ -306,12 +306,17 @@ MS5611::init()
 
 		ret = OK;
 
-		if (_class_instance == CLASS_DEVICE_PRIMARY) {
+		switch (_class_instance) {
+			case CLASS_DEVICE_PRIMARY:
+				_baro_topic = orb_advertise(ORB_ID(sensor_baro0), &brp);
+				break;
+			case CLASS_DEVICE_SECONDARY:
+				_baro_topic = orb_advertise(ORB_ID(sensor_baro1), &brp);
+				break;
+		}
 
-			_baro_topic = orb_advertise(ORB_ID(sensor_baro), &brp);
-
-			if (_baro_topic < 0)
-				debug("failed to create sensor_baro publication");
+		if (_baro_topic < 0) {
+			warnx("failed to create sensor_baro publication");
 		}
 
 	} while (0);
@@ -467,7 +472,7 @@ MS5611::ioctl(struct file *filp, int cmd, unsigned long arg)
 			irqrestore(flags);
 			return -ENOMEM;
 		}
-		irqrestore(flags);		
+		irqrestore(flags);
 		return OK;
 	}
 
@@ -533,6 +538,7 @@ void
 MS5611::cycle()
 {
 	int ret;
+	unsigned dummy;
 
 	/* collection phase? */
 	if (_collect_phase) {
@@ -549,6 +555,8 @@ MS5611::cycle()
 			} else {
 				//log("collection error %d", ret);
 			}
+			/* issue a reset command to the sensor */
+			_interface->ioctl(IOCTL_RESET, dummy);
 			/* reset the collection state machine and try again */
 			start_cycle();
 			return;
@@ -580,6 +588,8 @@ MS5611::cycle()
 	ret = measure();
 	if (ret != OK) {
 		//log("measure error %d", ret);
+		/* issue a reset command to the sensor */
+		_interface->ioctl(IOCTL_RESET, dummy);
 		/* reset the collection state machine and try again */
 		start_cycle();
 		return;
@@ -735,9 +745,17 @@ MS5611::collect()
 		_Alt = report.altitude;
 
 		/* publish it */
-		if (_baro_topic > 0 && !(_pub_blocked)) {
+		if (!(_pub_blocked)) {
 			/* publish it */
-			orb_publish(ORB_ID(sensor_baro), _baro_topic, &report);
+			switch (_class_instance) {
+				case CLASS_DEVICE_PRIMARY:
+					orb_publish(ORB_ID(sensor_baro0), _baro_topic, &report);
+					break;
+
+				case CLASS_DEVICE_SECONDARY:
+					orb_publish(ORB_ID(sensor_baro1), _baro_topic, &report);
+					break;
+			}
 		}
 
 		if (_reports->force(&report)) {
@@ -767,9 +785,14 @@ MS5611::print_info()
 	printf("TEMP:           %d\n", _TEMP);
 	printf("SENS:           %lld\n", _SENS);
 	printf("OFF:            %lld\n", _OFF);
+<<<<<<< HEAD
 	printf("P:              %.3f\n", _P);
 	printf("T:              %.3f\n", _T);
 	printf("alt:            %.3f\n", _Alt);
+=======
+	printf("P:              %.3f\n", (double)_P);
+	printf("T:              %.3f\n", (double)_T);
+>>>>>>> upstream/ArduCopter-3.2.1
 	printf("MSL pressure:   %10.4f\n", (double)(_msl_pressure / 100.f));
 
 	printf("factory_setup             %u\n", _prom.factory_setup);
@@ -796,6 +819,7 @@ void	test2();
 void	reset();
 void	info();
 void	calibrate(unsigned altitude);
+void	usage();
 
 /**
  * MS5611 crc4 cribbed from the datasheet
@@ -1148,6 +1172,14 @@ calibrate(unsigned altitude)
 	exit(0);
 }
 
+void
+usage()
+{
+	warnx("missing command: try 'start', 'info', 'test', 'test2', 'reset', 'calibrate'");
+	warnx("options:");
+	warnx("    -X    (external bus)");
+}
+
 } // namespace
 
 void
@@ -1171,7 +1203,11 @@ ms5611_main(int argc, char *argv[])
 			external_bus = true;
 			break;
 		default:
+<<<<<<< HEAD
 			ms5611_usage();
+=======
+			ms5611::usage();
+>>>>>>> upstream/ArduCopter-3.2.1
 			exit(0);
 		}
 	}

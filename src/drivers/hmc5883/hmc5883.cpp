@@ -163,6 +163,8 @@ private:
 	int			_class_instance;
 
 	orb_advert_t		_mag_topic;
+	orb_advert_t		_subsystem_pub;
+	orb_id_t		_mag_orb_id;
 
 	perf_counter_t		_sample_perf;
 	perf_counter_t		_comms_errors;
@@ -178,6 +180,12 @@ private:
 	enum Rotation		_rotation;
 
 	struct mag_report	_last_report;           /**< used for info() */
+<<<<<<< HEAD
+=======
+
+	uint8_t			_range_bits;
+	uint8_t			_conf_reg;
+>>>>>>> upstream/ArduCopter-3.2.1
 
 	/**
 	 * Test whether the device supported by the driver is present at a
@@ -335,6 +343,9 @@ private:
 	 */
 	 int 			check_offset();
 
+	/* this class has pointer data members, do not allow copying it */
+	HMC5883(const HMC5883&);
+	HMC5883 operator=(const HMC5883&);
 };
 
 /*
@@ -345,14 +356,27 @@ extern "C" __EXPORT int hmc5883_main(int argc, char *argv[]);
 
 HMC5883::HMC5883(int bus, const char *path, enum Rotation rotation) :
 	I2C("HMC5883", path, bus, HMC5883L_ADDRESS, 400000),
+<<<<<<< HEAD
+=======
+	_work{},
+>>>>>>> upstream/ArduCopter-3.2.1
 	_measure_ticks(0),
 	_reports(nullptr),
+	_scale{},
 	_range_scale(0), /* default range scale from counts to gauss */
 	_range_ga(1.3f),
+<<<<<<< HEAD
 	_range_bits(0),
 	_conf_reg(0),
 	_class_instance(-1),
 	_mag_topic(-1),
+=======
+	_collect_phase(false),
+	_class_instance(-1),
+	_mag_topic(-1),
+	_subsystem_pub(-1),
+	_mag_orb_id(nullptr),
+>>>>>>> upstream/ArduCopter-3.2.1
 	_sample_perf(perf_alloc(PC_ELAPSED, "hmc5883_read")),
 	_comms_errors(perf_alloc(PC_COUNT, "hmc5883_comms_errors")),
 	_buffer_overflows(perf_alloc(PC_COUNT, "hmc5883_buffer_overflows")),
@@ -361,7 +385,14 @@ HMC5883::HMC5883(int bus, const char *path, enum Rotation rotation) :
 	_sensor_ok(false),
 	_calibrated(false),
 	_bus(bus),
+<<<<<<< HEAD
 	_rotation(rotation)
+=======
+	_rotation(rotation),
+	_last_report{0},
+	_range_bits(0),
+	_conf_reg(0)
+>>>>>>> upstream/ArduCopter-3.2.1
 {
 	_device_id.devid_s.devtype = DRV_MAG_DEVTYPE_HMC5883;
 
@@ -417,6 +448,20 @@ HMC5883::init()
 	reset();
 
 	_class_instance = register_class_devname(MAG_DEVICE_PATH);
+
+	switch (_class_instance) {
+		case CLASS_DEVICE_PRIMARY:
+			_mag_orb_id = ORB_ID(sensor_mag0);
+			break;
+
+		case CLASS_DEVICE_SECONDARY:
+			_mag_orb_id = ORB_ID(sensor_mag1);
+			break;
+
+		case CLASS_DEVICE_TERTIARY:
+			_mag_orb_id = ORB_ID(sensor_mag2);
+			break;
+	}
 
 	ret = OK;
 	/* sensor is ok, but not calibrated */
@@ -793,7 +838,7 @@ HMC5883::cycle()
 
 		/* perform collection */
 		if (OK != collect()) {
-			log("collection error");
+			debug("collection error");
 			/* restart the measurement state machine */
 			start();
 			return;
@@ -820,7 +865,7 @@ HMC5883::cycle()
 
 	/* measurement phase */
 	if (OK != measure())
-		log("measure error");
+		debug("measure error");
 
 	/* next phase is collection */
 	_collect_phase = true;
@@ -862,7 +907,12 @@ HMC5883::collect()
 	struct {
 		int16_t		x, y, z;
 	} report;
+<<<<<<< HEAD
 	int	ret = -EIO;
+=======
+
+	int	ret;
+>>>>>>> upstream/ArduCopter-3.2.1
 	uint8_t	cmd;
 	uint8_t check_counter;
 
@@ -940,16 +990,20 @@ HMC5883::collect()
 	// apply user specified rotation
 	rotate_3f(_rotation, new_report.x, new_report.y, new_report.z);
 
+<<<<<<< HEAD
 	if (_class_instance == CLASS_DEVICE_PRIMARY && !(_pub_blocked)) {
+=======
+	if (!(_pub_blocked)) {
+>>>>>>> upstream/ArduCopter-3.2.1
 
 		if (_mag_topic != -1) {
 			/* publish it */
-			orb_publish(ORB_ID(sensor_mag), _mag_topic, &new_report);
+			orb_publish(_mag_orb_id, _mag_topic, &new_report);
 		} else {
-			_mag_topic = orb_advertise(ORB_ID(sensor_mag), &new_report);
+			_mag_topic = orb_advertise(_mag_orb_id, &new_report);
 
 			if (_mag_topic < 0)
-				debug("failed to create sensor_mag publication");
+				debug("ADVERT FAIL");
 		}
 	}
 
@@ -1022,11 +1076,9 @@ int HMC5883::calibrate(struct file *filp, unsigned enable)
 	 * LSM/Ga, giving 1.16 and 1.08 */
 	float expected_cal[3] = { 1.16f, 1.08f, 1.08f };
 
-	warnx("starting mag scale calibration");
-
 	/* start the sensor polling at 50 Hz */
 	if (OK != ioctl(filp, SENSORIOCSPOLLRATE, 50)) {
-		warn("failed to set 2Hz poll rate");
+		warn("FAILED: SENSORIOCSPOLLRATE 2Hz");
 		ret = 1;
 		goto out;
 	}
@@ -1034,25 +1086,25 @@ int HMC5883::calibrate(struct file *filp, unsigned enable)
 	/* Set to 2.5 Gauss. We ask for 3 to get the right part of
          * the chained if statement above. */
 	if (OK != ioctl(filp, MAGIOCSRANGE, 3)) {
-		warnx("failed to set 2.5 Ga range");
+		warnx("FAILED: MAGIOCSRANGE 3.3 Ga");
 		ret = 1;
 		goto out;
 	}
 
 	if (OK != ioctl(filp, MAGIOCEXSTRAP, 1)) {
-		warnx("failed to enable sensor calibration mode");
+		warnx("FAILED: MAGIOCEXSTRAP 1");
 		ret = 1;
 		goto out;
 	}
 
 	if (OK != ioctl(filp, MAGIOCGSCALE, (long unsigned int)&mscale_previous)) {
-		warn("WARNING: failed to get scale / offsets for mag");
+		warn("FAILED: MAGIOCGSCALE 1");
 		ret = 1;
 		goto out;
 	}
 
 	if (OK != ioctl(filp, MAGIOCSSCALE, (long unsigned int)&mscale_null)) {
-		warn("WARNING: failed to set null scale / offsets for mag");
+		warn("FAILED: MAGIOCSSCALE 1");
 		ret = 1;
 		goto out;
 	}
@@ -1067,7 +1119,7 @@ int HMC5883::calibrate(struct file *filp, unsigned enable)
 		ret = ::poll(&fds, 1, 2000);
 
 		if (ret != 1) {
-			warn("timed out waiting for sensor data");
+			warn("ERROR: TIMEOUT 1");
 			goto out;
 		}
 
@@ -1075,7 +1127,7 @@ int HMC5883::calibrate(struct file *filp, unsigned enable)
 		sz = ::read(fd, &report, sizeof(report));
 
 		if (sz != sizeof(report)) {
-			warn("periodic read failed");
+			warn("ERROR: READ 1");
 			ret = -EIO;
 			goto out;
 		}
@@ -1091,7 +1143,7 @@ int HMC5883::calibrate(struct file *filp, unsigned enable)
 		ret = ::poll(&fds, 1, 2000);
 
 		if (ret != 1) {
-			warn("timed out waiting for sensor data");
+			warn("ERROR: TIMEOUT 2");
 			goto out;
 		}
 
@@ -1099,7 +1151,7 @@ int HMC5883::calibrate(struct file *filp, unsigned enable)
 		sz = ::read(fd, &report, sizeof(report));
 
 		if (sz != sizeof(report)) {
-			warn("periodic read failed");
+			warn("ERROR: READ 2");
 			ret = -EIO;
 			goto out;
 		}
@@ -1115,24 +1167,12 @@ int HMC5883::calibrate(struct file *filp, unsigned enable)
 			sum_excited[1] += cal[1];
 			sum_excited[2] += cal[2];
 		}
-
-		//warnx("periodic read %u", i);
-		//warnx("measurement: %.6f  %.6f  %.6f", (double)report.x, (double)report.y, (double)report.z);
-		//warnx("cal: %.6f  %.6f  %.6f", (double)cal[0], (double)cal[1], (double)cal[2]);
 	}
 
 	if (good_count < 5) {
-		warn("failed calibration");
 		ret = -EIO;
 		goto out;
 	}
-
-#if 0
-	warnx("measurement avg: %.6f  %.6f  %.6f", 
-	      (double)sum_excited[0]/good_count, 
-	      (double)sum_excited[1]/good_count, 
-	      (double)sum_excited[2]/good_count);
-#endif
 
 	float scaling[3];
 
@@ -1140,8 +1180,11 @@ int HMC5883::calibrate(struct file *filp, unsigned enable)
 	scaling[1] = sum_excited[1] / good_count;
 	scaling[2] = sum_excited[2] / good_count;
 
+<<<<<<< HEAD
 	warnx("axes scaling: %.6f  %.6f  %.6f", (double)scaling[0], (double)scaling[1], (double)scaling[2]);
 
+=======
+>>>>>>> upstream/ArduCopter-3.2.1
 	/* set scaling in device */
 	mscale_previous.x_scale = scaling[0];
 	mscale_previous.y_scale = scaling[1];
@@ -1152,29 +1195,38 @@ int HMC5883::calibrate(struct file *filp, unsigned enable)
 out:
 
 	if (OK != ioctl(filp, MAGIOCSSCALE, (long unsigned int)&mscale_previous)) {
+<<<<<<< HEAD
 		warn("WARNING: failed to set new scale / offsets for mag");
+=======
+		warn("FAILED: MAGIOCSSCALE 2");
+>>>>>>> upstream/ArduCopter-3.2.1
 	}
 
 	/* set back to normal mode */
 	/* Set to 1.1 Gauss */
 	if (OK != ::ioctl(fd, MAGIOCSRANGE, 1)) {
+<<<<<<< HEAD
 		warnx("failed to set 1.1 Ga range");
 	}
 
 	if (OK != ::ioctl(fd, MAGIOCEXSTRAP, 0)) {
 		warnx("failed to disable sensor calibration mode");
+=======
+		warnx("FAILED: MAGIOCSRANGE 1.1 Ga");
+	}
+
+	if (OK != ::ioctl(fd, MAGIOCEXSTRAP, 0)) {
+		warnx("FAILED: MAGIOCEXSTRAP 0");
+>>>>>>> upstream/ArduCopter-3.2.1
 	}
 
 	if (ret == OK) {
-		if (!check_scale()) {
-			warnx("mag scale calibration successfully finished.");
-		} else {
-			warnx("mag scale calibration finished with invalid results.");
+		if (check_scale()) {
+			/* failed */
+			warnx("FAILED: SCALE");
 			ret = ERROR;
 		}
 
-	} else {
-		warnx("mag scale calibration failed.");
 	}
 
 	return ret;
@@ -1233,13 +1285,12 @@ int HMC5883::check_calibration()
 			true,
 			_calibrated,
 			SUBSYSTEM_TYPE_MAG};
-		static orb_advert_t pub = -1;
 
 		if (!(_pub_blocked)) {
-			if (pub > 0) {
-				orb_publish(ORB_ID(subsystem_info), pub, &info);
+			if (_subsystem_pub > 0) {
+				orb_publish(ORB_ID(subsystem_info), _subsystem_pub, &info);
 			} else {
-				pub = orb_advertise(ORB_ID(subsystem_info), &info);
+				_subsystem_pub = orb_advertise(ORB_ID(subsystem_info), &info);
 			}
 		}
 	}
@@ -1257,14 +1308,18 @@ int HMC5883::set_excitement(unsigned enable)
 	if (OK != ret)
 		perf_count(_comms_errors);
 
+	_conf_reg &= ~0x03; // reset previous excitement mode
 	if (((int)enable) < 0) {
 		_conf_reg |= 0x01;
 
 	} else if (enable > 0) {
 		_conf_reg |= 0x02;
 
+<<<<<<< HEAD
 	} else {
 		_conf_reg &= ~0x03;
+=======
+>>>>>>> upstream/ArduCopter-3.2.1
 	}
 
         // ::printf("set_excitement enable=%d regA=0x%x\n", (int)enable, (unsigned)_conf_reg);
@@ -1321,7 +1376,7 @@ HMC5883::print_info()
 	printf("offsets (%.2f %.2f %.2f)\n", (double)_scale.x_offset, (double)_scale.y_offset, (double)_scale.z_offset);
 	printf("scaling (%.2f %.2f %.2f) 1/range_scale %.2f range_ga %.2f\n", 
 	       (double)_scale.x_scale, (double)_scale.y_scale, (double)_scale.z_scale,
-	       (double)1.0/_range_scale, (double)_range_ga);
+	       (double)(1.0f/_range_scale), (double)_range_ga);
 	_reports->print_info("report queue");
 }
 
@@ -1340,15 +1395,27 @@ const int ERROR = -1;
 HMC5883	*g_dev_int = nullptr;
 HMC5883	*g_dev_ext = nullptr;
 
+<<<<<<< HEAD
 void	hmc5883_usage();
 void	start(int bus, enum Rotation rotation);
 void	test(int bus);
 void	reset(int bus);
 void	info(int bus);
 int	calibrate(int bus);
+=======
+void	start(int bus, enum Rotation rotation);
+void	test(int bus);
+void	reset(int bus);
+int	info(int bus);
+int	calibrate(int bus);
+void	usage();
+>>>>>>> upstream/ArduCopter-3.2.1
 
 /**
  * Start the driver.
+ *
+ * This function call only returns once the driver
+ * is either successfully up and running or failed to start.
  */
 void
 start(int bus, enum Rotation rotation)
@@ -1444,7 +1511,11 @@ test(int bus)
 	int fd = open(path, O_RDONLY);
 
 	if (fd < 0)
+<<<<<<< HEAD
 		err(1, "%s open failed (try 'hmc5883 start' if the driver is not running", path);
+=======
+		err(1, "%s open failed (try 'hmc5883 start')", path);
+>>>>>>> upstream/ArduCopter-3.2.1
 
 	/* do a simple demand read */
 	sz = read(fd, &report, sizeof(report));
@@ -1586,17 +1657,45 @@ reset(int bus)
 /**
  * Print a little info about the driver.
  */
+<<<<<<< HEAD
 void
 info(int bus)
 {
 	HMC5883 *g_dev = (bus == PX4_I2C_BUS_ONBOARD?g_dev_int:g_dev_ext);
 	if (g_dev == nullptr)
 		errx(1, "driver not running");
+=======
+int
+info(int bus)
+{
+	int ret = 1;
+>>>>>>> upstream/ArduCopter-3.2.1
 
-	printf("state @ %p\n", g_dev);
-	g_dev->print_info();
+	HMC5883 *g_dev = (bus == PX4_I2C_BUS_ONBOARD ? g_dev_int : g_dev_ext);
+	if (g_dev == nullptr) {
+		warnx("not running on bus %d", bus);
+	} else {
 
-	exit(0);
+		warnx("running on bus: %d (%s)\n", bus, ((PX4_I2C_BUS_ONBOARD) ? "onboard" : "offboard"));
+
+		g_dev->print_info();
+		ret = 0;
+	}
+
+	return ret;
+}
+
+void
+usage()
+{
+	warnx("missing command: try 'start', 'info', 'test', 'reset', 'info', 'calibrate'");
+	warnx("options:");
+	warnx("    -R rotation");
+	warnx("    -C calibrate on start");
+	warnx("    -X only external bus");
+#ifdef PX4_I2C_BUS_ONBOARD
+	warnx("    -I only internal bus");
+#endif
 }
 
 } // namespace
@@ -1639,7 +1738,11 @@ hmc5883_main(int argc, char *argv[])
 			calibrate = true;
 			break;
 		default:
+<<<<<<< HEAD
 			hmc5883_usage();
+=======
+			hmc5883::usage();
+>>>>>>> upstream/ArduCopter-3.2.1
 			exit(0);
 		}
 	}
@@ -1676,8 +1779,26 @@ hmc5883_main(int argc, char *argv[])
 	/*
 	 * Print driver information.
 	 */
+<<<<<<< HEAD
 	if (!strcmp(verb, "info") || !strcmp(verb, "status"))
 		hmc5883::info(bus);
+=======
+	if (!strcmp(verb, "info") || !strcmp(verb, "status")) {
+		if (bus == -1) {
+			int ret = 0;
+			if (hmc5883::info(PX4_I2C_BUS_ONBOARD)) {
+				ret = 1;
+			}
+
+			if (hmc5883::info(PX4_I2C_BUS_EXPANSION)) {
+				ret = 1;
+			}
+			exit(ret);
+		} else {
+			exit(hmc5883::info(bus));
+		}
+	}
+>>>>>>> upstream/ArduCopter-3.2.1
 
 	/*
 	 * Autocalibrate the scaling

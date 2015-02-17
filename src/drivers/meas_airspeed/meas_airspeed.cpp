@@ -79,6 +79,8 @@
 #include <systemlib/param/param.h>
 #include <systemlib/perf_counter.h>
 
+#include <mathlib/math/filter/LowPassFilter2p.hpp>
+
 #include <drivers/drv_airspeed.h>
 #include <drivers/drv_hrt.h>
 
@@ -90,7 +92,7 @@
 #include <drivers/airspeed/airspeed.h>
 
 /* I2C bus address is 1010001x */
-#define I2C_ADDRESS_MS4525DO	0x28	//0x51 /* 7-bit address. */
+#define I2C_ADDRESS_MS4525DO	0x28	/**< 7-bit address. Depends on the order code (this is for code "I") */
 #define PATH_MS4525		"/dev/ms4525"
 /* The MS5525DSO address is 111011Cx, where C is the complementary value of the pin CSB */
 #define I2C_ADDRESS_MS5525DSO	0x77	//0x77/* 7-bit address, addr. pin pulled low */
@@ -100,7 +102,9 @@
 #define ADDR_READ_MR			0x00	/* write to this address to start conversion */
 
 /* Measurement rate is 100Hz */
-#define CONVERSION_INTERVAL	(1000000 / 100)	/* microseconds */
+#define MEAS_RATE 100
+#define MEAS_DRIVER_FILTER_FREQ 1.2f
+#define CONVERSION_INTERVAL	(1000000 / MEAS_RATE)	/* microseconds */
 
 class MEASAirspeed : public Airspeed
 {
@@ -117,7 +121,15 @@ protected:
 	virtual int	measure();
 	virtual int	collect();
 
+<<<<<<< HEAD
 	// correct for 5V rail voltage
+=======
+	math::LowPassFilter2p	_filter;
+
+	/**
+	 * Correct for 5V rail voltage variations
+	 */
+>>>>>>> upstream/ArduCopter-3.2.1
 	void voltage_correction(float &diff_pres_pa, float &temperature);
 
 	int _t_system_power;
@@ -130,10 +142,18 @@ protected:
 extern "C" __EXPORT int meas_airspeed_main(int argc, char *argv[]);
 
 MEASAirspeed::MEASAirspeed(int bus, int address, const char *path) : Airspeed(bus, address,
+<<<<<<< HEAD
                                                                               CONVERSION_INTERVAL, path),
                                                                      _t_system_power(-1)
 {
 	memset(&system_power, 0, sizeof(system_power));
+=======
+	CONVERSION_INTERVAL, path),
+	_filter(MEAS_RATE, MEAS_DRIVER_FILTER_FREQ),
+	_t_system_power(-1),
+	system_power{}
+{
+>>>>>>> upstream/ArduCopter-3.2.1
 }
 
 int
@@ -212,6 +232,21 @@ MEASAirspeed::collect()
 	 */
 	float diff_press_PSI = -((dp_raw - 0.1f*16383) * (P_max-P_min)/(0.8f*16383) + P_min);
 	float diff_press_pa_raw = diff_press_PSI * PSI_to_Pa;
+<<<<<<< HEAD
+=======
+
+        // correct for 5V rail voltage if possible
+        voltage_correction(diff_press_pa_raw, temperature);
+
+	// the raw value still should be compensated for the known offset
+	diff_press_pa_raw -= _diff_pres_offset;
+
+	/*
+	  With the above calculation the MS4525 sensor will produce a
+	  positive number when the top port is used as a dynamic port
+	  and bottom port is used as the static port
+	 */
+>>>>>>> upstream/ArduCopter-3.2.1
 
         // correct for 5V rail voltage if possible
         voltage_correction(diff_press_pa_raw, temperature);
@@ -240,16 +275,22 @@ MEASAirspeed::collect()
 	struct differential_pressure_s report;
 
 	/* track maximum differential pressure measured (so we can work out top speed). */
-	if (diff_press_pa > _max_differential_pressure_pa) {
-		_max_differential_pressure_pa = diff_press_pa;
+	if (diff_press_pa_raw > _max_differential_pressure_pa) {
+		_max_differential_pressure_pa = diff_press_pa_raw;
 	}
 
 	report.timestamp = hrt_absolute_time();
 	report.error_count = perf_event_count(_comms_errors);
 	report.temperature = temperature;
+<<<<<<< HEAD
 	report.differential_pressure_pa = diff_press_pa;
 	report.differential_pressure_raw_pa = diff_press_pa_raw;
 	report.voltage = 0;
+=======
+	report.differential_pressure_filtered_pa =  _filter.apply(diff_press_pa_raw);
+
+	report.differential_pressure_raw_pa = diff_press_pa_raw;
+>>>>>>> upstream/ArduCopter-3.2.1
 	report.max_differential_pressure_pa = _max_differential_pressure_pa;
 
 	if (_airspeed_pub > 0 && !(_pub_blocked)) {
@@ -272,13 +313,17 @@ MEASAirspeed::collect()
 void
 MEASAirspeed::cycle()
 {
+	int ret;
+
 	/* collection phase? */
 	if (_collect_phase) {
 
 		/* perform collection */
-		if (OK != collect()) {
+		ret = collect();
+		if (OK != ret) {
 			/* restart the measurement state machine */
 			start();
+			_sensor_ok = false;
 			return;
 		}
 
@@ -302,9 +347,12 @@ MEASAirspeed::cycle()
 	}
 
 	/* measurement phase */
-	if (OK != measure()) {
-		log("measure error");
+	ret = measure();
+	if (OK != ret) {
+		debug("measure error");
 	}
+
+	_sensor_ok = (ret == OK);
 
 	/* next phase is collection */
 	_collect_phase = true;
@@ -320,7 +368,11 @@ MEASAirspeed::cycle()
 /**
    correct for 5V rail voltage if the system_power ORB topic is
    available
+<<<<<<< HEAD
    
+=======
+
+>>>>>>> upstream/ArduCopter-3.2.1
    See http://uav.tridgell.net/MS4525/MS4525-offset.png for a graph of
    offset versus voltage for 3 sensors
  */
@@ -369,7 +421,11 @@ MEASAirspeed::voltage_correction(float &diff_press_pa, float &temperature)
 	if (voltage_diff < -1.0f) {
 		voltage_diff = -1.0f;
 	}
+<<<<<<< HEAD
 	temperature -= voltage_diff * temp_slope;	
+=======
+	temperature -= voltage_diff * temp_slope;
+>>>>>>> upstream/ArduCopter-3.2.1
 #endif // CONFIG_ARCH_BOARD_PX4FMU_V2
 }
 
@@ -395,6 +451,9 @@ void	info();
 
 /**
  * Start the driver.
+ *
+ * This function call only returns once the driver is up and running
+ * or failed to detect the sensor.
  */
 void
 start(int i2c_bus)
@@ -495,7 +554,11 @@ test()
 	}
 
 	warnx("single read");
+<<<<<<< HEAD
 	warnx("diff pressure: %d pa", (int)report.differential_pressure_pa);
+=======
+	warnx("diff pressure: %d pa", (int)report.differential_pressure_filtered_pa);
+>>>>>>> upstream/ArduCopter-3.2.1
 
 	/* start the sensor polling at 2Hz */
 	if (OK != ioctl(fd, SENSORIOCSPOLLRATE, 2)) {
@@ -512,7 +575,7 @@ test()
 		ret = poll(&fds, 1, 2000);
 
 		if (ret != 1) {
-			errx(1, "timed out waiting for sensor data");
+			errx(1, "timed out");
 		}
 
 		/* now go get it */
@@ -523,7 +586,11 @@ test()
 		}
 
 		warnx("periodic read %u", i);
+<<<<<<< HEAD
 		warnx("diff pressure: %d pa", (int)report.differential_pressure_pa);
+=======
+		warnx("diff pressure: %d pa", (int)report.differential_pressure_filtered_pa);
+>>>>>>> upstream/ArduCopter-3.2.1
 		warnx("temperature: %d C (0x%02x)", (int)report.temperature, (unsigned) report.temperature);
 	}
 
